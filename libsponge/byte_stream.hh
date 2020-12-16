@@ -11,12 +11,17 @@
 class ByteStream {
   private:
     // Your code here -- add private members as necessary.
-
+    std::string buffer; // 循环队列，有一个元素不被使用，用于判空和判满
+    size_t seq_acked;
+    size_t seq_send;
     // Hint: This doesn't need to be a sophisticated data structure at
     // all, but if any of your tests are taking longer than a second,
     // that's a sign that you probably want to keep exploring
     // different approaches.
 
+    bool end{};
+    size_t written_bytes{};
+    size_t read_bytes{};
     bool _error{};  //!< Flag indicating that the stream suffered an error.
 
   public:
