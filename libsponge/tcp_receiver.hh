@@ -20,6 +20,12 @@ class TCPReceiver {
     //! The maximum number of bytes we'll store.
     size_t _capacity;
 
+    uint32_t _isn{};
+    uint32_t _next_ackno{};
+    //! 记录syn和fin的个数，从而从计算出来的absolute seqno中减去这个计数值，最后就得到缓冲区的index值
+    uint64_t _syn_fin_cnt{};
+    bool _isn_flag{};
+
   public:
     //! \brief Construct a TCP receiver
     //!

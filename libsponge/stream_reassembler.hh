@@ -32,6 +32,10 @@ class StreamReassembler {
     //! \note This capacity limits both the bytes that have been reassembled,
     //! and those that have not yet been reassembled.
     StreamReassembler(const size_t capacity);
+    
+    //! \brief Get zhe first unassembled index
+    //! \returns the first unassembed index
+    uint64_t first_unassembled_index() const;
 
     //! \brief Receive a substring and write any newly contiguous bytes into the stream.
     //!

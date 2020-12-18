@@ -19,6 +19,10 @@ StreamReassembler::StreamReassembler(const size_t capacity) :
     _output(capacity), _capacity(capacity), index_vec(), index_map() {
 }
 
+uint64_t StreamReassembler::first_unassembled_index() const {
+    return first_unassembled;
+}
+
 bool StreamReassembler::reassemble_substring() {
     uint64_t first{}, second{};
     uint64_t fst_size{};
