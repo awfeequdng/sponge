@@ -31,6 +31,10 @@ uint64_t TCPSender::bytes_in_flight() const {
 // fill_window会在回复ackno后被上层调用，
 // 因此在bytestream中没有数据时，并且不是syn和fin请求，不发送任何数据包
 void TCPSender::fill_window() {
+    // fin已经被发送，或者已经接收到了fin的ack，不再发送任何segment
+    if (_fin_in_flight_or_acked)
+        return;
+
     bool syn_fin_flag{false};
     TCPHeader header{};
     if (next_seqno_absolute() == 0) {
@@ -56,7 +60,7 @@ void TCPSender::fill_window() {
     if (buf_size == 0 && !syn_fin_flag) {
         return;
     }
-    // 也就是发送数据包的大小需要考虑三方面：1、发送缓冲区中数多少；2、TCP max_payload_size；3、receiver window size - bytes_in_flight()
+    // 发送数据包的大小需要考虑三方面：1、发送缓冲区中数多少；2、TCP max_payload_size；3、receiver window size - bytes_in_flight()
     uint64_t fill_size = min(buf_size, TCPConfig::MAX_PAYLOAD_SIZE);
     fill_size = min(fill_size, win_size_remain);
 
@@ -67,6 +71,10 @@ void TCPSender::fill_window() {
             (fill_size + 1 <= win_size_remain)) {
             header.fin = true;
         }
+    }
+    // fin将被发送，设置标志
+    if (header.fin) {
+        _fin_in_flight_or_acked = true;
     }
     TCPSegment seg{};
     seg.header() = header;
@@ -87,6 +95,10 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
         // 如果expected_ackno 或者 ackno 发生回绕该如何处理？todo:此处存在bug
         if (expected_ackno - ackno <= 0) {
             _bytes_in_fight -= seg.length_in_sequence_space();
+            if (seg.header().fin) {
+                // 接收到fin的响应
+                _fin_in_flight_or_acked = true;
+            }
             _segments_track.pop();
         } else {
             break;

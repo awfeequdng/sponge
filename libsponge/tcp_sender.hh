@@ -39,6 +39,9 @@ class TCPSender {
 
     uint64_t _bytes_in_fight{0};
 
+    // 接收到fin被发送或者接收到acked响应
+    bool _fin_in_flight_or_acked{false};
+
   public:
     //! Initialize a TCPSender
     TCPSender(const size_t capacity = TCPConfig::DEFAULT_CAPACITY,
