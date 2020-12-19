@@ -31,38 +31,43 @@ uint64_t TCPSender::bytes_in_flight() const {
 // fill_window会在回复ackno后被上层调用，
 // 因此在bytestream中没有数据时，并且不是syn和fin请求，不发送任何数据包
 void TCPSender::fill_window() {
-    bool send_flag = false;
-
+    bool syn_fin_flag{false};
     TCPHeader header{};
     if (next_seqno_absolute() == 0) {
         // SYN segment
         header.syn = true;
-        send_flag = true;
+        syn_fin_flag = true;
     }
     // 结束输出，将fin标志位置1
     if (_stream.eof()) {
         header.fin = true;
-        send_flag = true;
+        syn_fin_flag = true;
     }
     header.seqno = next_seqno();
 
-    uint64_t buf_size = _stream.buffer_size();
-    if (buf_size) {
-        send_flag = true;
-    }
-
-    if (!send_flag) {
-        // 没有数据发送，或者没有syn或fin发送，则不发送任何数据包
+    // 如果是receiver win size满了，不可发送任何数据包，包括发送fin（syn发送时默认window size为1，所以syn发送都能成功）
+    uint64_t win_size_remain = _receiver_window_size - bytes_in_flight();
+    if (win_size_remain == 0) {
         return;
     }
-    uint64_t fill_size = min(buf_size, TCPConfig::MAX_PAYLOAD_SIZE);
-    // 发送数据包大小还需要考虑receiver的window_size
-    // 也就是发送数据包的大小需要考虑三方面：1、发送缓冲区中数多少；2、TCP max_payload_size；3、receiver的window size
-    // fill_size = min(fill_size, _receiver_window_size);
-    // 以上代码存在bug，是由于我们此时可能有bytes_in_flight()不为0，也就是receiver 可以再接收的数据大小为window_size - bytes_in_flight()
-    fill_size = min(fill_size, _receiver_window_size - bytes_in_flight());
-    Buffer buf(_stream.read(fill_size));
 
+    uint64_t buf_size = _stream.buffer_size();
+    // 如果bytestream没有数据发送，并且当前不是syn或fin包，则不发送任何segment
+    if (buf_size == 0 && !syn_fin_flag) {
+        return;
+    }
+    // 也就是发送数据包的大小需要考虑三方面：1、发送缓冲区中数多少；2、TCP max_payload_size；3、receiver window size - bytes_in_flight()
+    uint64_t fill_size = min(buf_size, TCPConfig::MAX_PAYLOAD_SIZE);
+    fill_size = min(fill_size, win_size_remain);
+
+    Buffer buf(_stream.read(fill_size));
+    // bytestream读完数据后，发现存在eof，并且发送窗口有空间发送这个fin（占用一个字节序列），则将header.fin置位
+    if (_stream.eof()) {
+        if ((fill_size + 1 <= TCPConfig::MAX_PAYLOAD_SIZE) &&
+            (fill_size + 1 <= win_size_remain)) {
+            header.fin = true;
+        }
+    }
     TCPSegment seg{};
     seg.header() = header;
     seg.payload() = buf;
