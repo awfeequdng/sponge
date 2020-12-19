@@ -46,7 +46,7 @@ void TCPSender::fill_window() {
     }
     header.seqno = next_seqno();
 
-    size_t buf_size = _stream.buffer_size();
+    uint64_t buf_size = _stream.buffer_size();
     if (buf_size) {
         send_flag = true;
     }
@@ -55,7 +55,12 @@ void TCPSender::fill_window() {
         // 没有数据发送，或者没有syn或fin发送，则不发送任何数据包
         return;
     }
-    size_t fill_size = min(buf_size, TCPConfig::MAX_PAYLOAD_SIZE);
+    uint64_t fill_size = min(buf_size, TCPConfig::MAX_PAYLOAD_SIZE);
+    // 发送数据包大小还需要考虑receiver的window_size
+    // 也就是发送数据包的大小需要考虑三方面：1、发送缓冲区中数多少；2、TCP max_payload_size；3、receiver的window size
+    // fill_size = min(fill_size, _receiver_window_size);
+    // 以上代码存在bug，是由于我们此时可能有bytes_in_flight()不为0，也就是receiver 可以再接收的数据大小为window_size - bytes_in_flight()
+    fill_size = min(fill_size, _receiver_window_size - bytes_in_flight());
     Buffer buf(_stream.read(fill_size));
 
     TCPSegment seg{};
