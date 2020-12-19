@@ -89,6 +89,8 @@ void TCPSender::fill_window() {
 //! \param ackno The remote receiver's ackno (acknowledgment number)
 //! \param window_size The remote receiver's advertised window size
 void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_size) { 
+    // 在等待队列中的数据接收到了ack响应
+    bool ack_outstanding_flag{false};
     while(not _segments_track.empty()) {
         std::pair<std::pair<uint64_t, uint64_t>, TCPSegment> &tick_retx_seg = _segments_track.front();
         TCPSegment &seg = tick_retx_seg.second;
@@ -103,9 +105,19 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
             _segments_track.pop_front();
             // 接收到数据包的ack了，将consecutive_retransmissions置0
             _consecutive_retransmissions = 0;
+            ack_outstanding_flag = true;
         } else {
             break;
         }
+    }
+    // 如果收到ack后，并且是等待队列segment的ack，则设置余下等待队列第一个segment的超时时间。
+    // 如果接收到的ack不是等待队列中segment的ack，那么即使余下的等待队列中有segment也不重置超时时间戳。
+    // 接收到ack后，如果重传队列还有其他segment，则将第一个segment的超时时间戳设置为当前值，
+    // 第二个第三个segment不用管，在没有接收到第一个segment的ack是不会重传第二个甚至第三个segment的
+    if (ack_outstanding_flag && not _segments_track.empty()) {
+        std::pair<std::pair<uint64_t, uint64_t>, TCPSegment> &tick_retx_seg = _segments_track.front();
+        tick_retx_seg.first.first = _ms_tick_cnt; // 设置当前的时间戳
+        tick_retx_seg.first.second = 0; // 重传次数为0
     }
     _receiver_window_size = window_size;
 }
@@ -118,7 +130,10 @@ void TCPSender::tick(const size_t ms_since_last_tick) {
     _ms_tick_cnt += ms_since_last_tick;
     std::deque<std::pair<std::pair<uint64_t, uint64_t>, TCPSegment>>::iterator it_track= _segments_track.begin();
     bool retx_flag{false}; //是否发生重传
-    while (it_track != _segments_track.end()) {
+    // 当重传队列中有多个segment时，第一个segment没有接收到ack时，
+    // 即使第二个segment的超时时间到了也不能重传，必须等到第一个segment
+    // 接收到ack才能开启第二个segment的超时定时器。
+    if (it_track != _segments_track.end()) {
         std::pair<uint64_t, uint64_t> &tick_retx = it_track->first;
         uint64_t tick = tick_retx.first;
         uint64_t retx = tick_retx.second;
