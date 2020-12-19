@@ -23,11 +23,15 @@ class TCPSender {
     //! outbound queue of segments that the TCPSender wants sent
     std::queue<TCPSegment> _segments_out{};
 
-    //! track queue of segments that track the outstanding TCPSegment 
-    std::queue<TCPSegment> _segments_track{};
+    //! track queue of segments that track the outstanding TCPSegment
+    //! 放进队列的元素改为std::pair<uint64_t, TCPSegment>,pair的第一个元素为当前发送时刻的时间戳
+    std::deque<std::pair<uint64_t, TCPSegment>> _segments_track{};
 
     //! retransmission timer for the connection
     unsigned int _initial_retransmission_timeout;
+    
+    // 启动到现在经过的tick数，tick以ms为单位
+    uint64_t _ms_tick_cnt{0};
 
     //! outgoing stream of bytes that have not yet been sent
     ByteStream _stream;
