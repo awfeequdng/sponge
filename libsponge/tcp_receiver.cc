@@ -53,7 +53,7 @@ void TCPReceiver::segment_received(const TCPSegment &seg) {
     index = _reassembler.first_unassembled_index();
     // 1、非syn数据包的abs_seqno比bytestream的index索引要多1(多了一个syn占用的字节)
     // 2、如果已经接收到了空fin数据包,并且这个fin数据包被放入了bytestream，那么下一个next_ackno就是这个fin数据包序列的下一个序列值（index加上syn占据的一个字节以及fin占据的一个字节）
-    // 3、如果已经接收到了非空fin数据包(fin包中不仅包含fin标志，还带有数据)，并且这个fin数据包被放入bytestream，那么next_ackno就是这个数据包序列加上数据包的长度（index加上syn占据的一个字节，fin占据的一个字节，以及fin数据包的长度）
+    // 3、如果已经接收到了非空fin数据包(fin包中不仅包含fin标志，还带有数据)，并且这个fin数据包被放入bytestream，那么next_ackno就是这个数据包序列加上数据包的长度,再加上fin占用的一个字节（index加上syn占据的一个字节，fin占据的一个字节，以及fin数据包的长度）
     // 4、如果最后的fin数据包被接收，那么first_unassembled_index就已经计算了fin数据包的长度了
     bool flag = _fin_flag && _reassembler.unassembled_bytes() == 0;
     abs_seqno = index + _isn_flag + (flag ? 1 : 0);
