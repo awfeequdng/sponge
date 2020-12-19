@@ -24,8 +24,10 @@ class TCPSender {
     std::queue<TCPSegment> _segments_out{};
 
     //! track queue of segments that track the outstanding TCPSegment
-    //! 放进队列的元素改为std::pair<uint64_t, TCPSegment>,pair的第一个元素为当前发送时刻的时间戳
-    std::deque<std::pair<uint64_t, TCPSegment>> _segments_track{};
+    //! 放进队列的元素改为std::pair<std::pair<uint64_t,uint64_t>, TCPSegment>
+    //! 第一个std::pair<uint64_t,uint64_t>,表示当前segment发送时的时间戳以及发送次数
+    //! TCPSegment为发送的segment副本，用于重传
+    std::deque<std::pair<std::pair<uint64_t, uint64_t>, TCPSegment>> _segments_track{};
 
     //! retransmission timer for the connection
     unsigned int _initial_retransmission_timeout;
@@ -45,6 +47,8 @@ class TCPSender {
 
     // 接收到fin被发送或者接收到acked响应
     bool _fin_in_flight_or_acked{false};
+
+    unsigned int _consecutive_retransmissions{0};
 
   public:
     //! Initialize a TCPSender

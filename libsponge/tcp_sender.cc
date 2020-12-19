@@ -81,7 +81,7 @@ void TCPSender::fill_window() {
     seg.payload() = buf;
     _segments_out.push(seg);
     // track the outstanding TCPSegment
-    _segments_track.push_back(std::make_pair(_ms_tick_cnt, seg));
+    _segments_track.push_back(std::make_pair(std::make_pair(_ms_tick_cnt, 0), seg));
     _next_seqno += seg.length_in_sequence_space();
     _bytes_in_fight += seg.length_in_sequence_space();
 }
@@ -90,8 +90,8 @@ void TCPSender::fill_window() {
 //! \param window_size The remote receiver's advertised window size
 void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_size) { 
     while(not _segments_track.empty()) {
-        std::pair<uint64_t, TCPSegment> &tick_seg = _segments_track.front();
-        TCPSegment &seg = tick_seg.second;
+        std::pair<std::pair<uint64_t, uint64_t>, TCPSegment> &tick_retx_seg = _segments_track.front();
+        TCPSegment &seg = tick_retx_seg.second;
         WrappingInt32 expected_ackno = seg.header().seqno + seg.length_in_sequence_space();
         // 如果expected_ackno 或者 ackno 发生回绕该如何处理？todo:此处存在bug
         if (expected_ackno - ackno <= 0) {
@@ -101,6 +101,8 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
                 _fin_in_flight_or_acked = true;
             }
             _segments_track.pop_front();
+            // 接收到数据包的ack了，将consecutive_retransmissions置0
+            _consecutive_retransmissions = 0;
         } else {
             break;
         }
@@ -114,20 +116,30 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
 //! \param[in] ms_since_last_tick the number of milliseconds since the last call to this method
 void TCPSender::tick(const size_t ms_since_last_tick) { 
     _ms_tick_cnt += ms_since_last_tick;
-    std::deque<std::pair<uint64_t, TCPSegment>>::iterator it_track= _segments_track.begin();
+    std::deque<std::pair<std::pair<uint64_t, uint64_t>, TCPSegment>>::iterator it_track= _segments_track.begin();
+    bool retx_flag{false}; //是否发生重传
     while (it_track != _segments_track.end()) {
-        uint64_t tick = it_track->first;
-        if (tick + _initial_retransmission_timeout <= _ms_tick_cnt) {
-            // 超时重传, 更新重传时间
-            it_track->first = _ms_tick_cnt;
+        std::pair<uint64_t, uint64_t> &tick_retx = it_track->first;
+        uint64_t tick = tick_retx.first;
+        uint64_t retx = tick_retx.second;
+        // 超时时间是按指数方式增长的，每超时一次，超时时间就翻一倍
+        if (tick + (_initial_retransmission_timeout<<retx) <= _ms_tick_cnt) {
+            // 超时重传, 更新重传时间,更新重传次数
+            tick_retx.first = _ms_tick_cnt;
+            tick_retx.second = retx + 1;
             // 将该超时的segment放在队列后面
             _segments_out.push(it_track->second);
+            // 连续重传的数据包数目
+            retx_flag = true;
         }
         it_track++;
     }
+    if (retx_flag)
+        _consecutive_retransmissions++; // 发生重传
+
 }
 
-unsigned int TCPSender::consecutive_retransmissions() const { return {}; }
+unsigned int TCPSender::consecutive_retransmissions() const { return _consecutive_retransmissions; }
 
 void TCPSender::send_empty_segment() {
     TCPHeader header{};
