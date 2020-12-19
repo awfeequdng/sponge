@@ -52,7 +52,9 @@ void TCPSender::fill_window() {
         header.seqno = next_seqno();
 
         // 下一个seqno的结束位置，不包含结束值
-        WrappingInt32 next_seqno_end = _receiver_ackno + _receiver_window_size;
+        // When filling window, treat a '0' window size as equal to '1' but don't back off RTO
+        // 在调用fill_window填充窗口时，如果接收窗口的值为0，我们将这个接收窗口的值设置为1，但是不回退RTO的值
+        WrappingInt32 next_seqno_end = _receiver_ackno + (_receiver_window_size == 0 ? 1 : _receiver_window_size);
 
         // 如果是receiver win size满了，不可发送任何数据包，
         // 即next_seqno必须在[_receiver_ackno, _receiver_ackno + _receiver_window_size)之间，
@@ -159,7 +161,10 @@ void TCPSender::tick(const size_t ms_since_last_tick) {
         if (tick + (_initial_retransmission_timeout<<retx) <= _ms_tick_cnt) {
             // 超时重传, 更新重传时间,更新重传次数
             tick_retx.first = _ms_tick_cnt;
-            tick_retx.second = retx + 1;
+            // When filling window, treat a '0' window size as equal to '1' but don't back off RTO
+            // 当接收窗口大小为0时，超时后不改变RTO的值，此时就是不改变超时计数
+            if (_receiver_window_size)
+                tick_retx.second = retx + 1;
             // 将该超时的segment放在队列后面
             _segments_out.push(it_track->second);
             // 连续重传的数据包数目
