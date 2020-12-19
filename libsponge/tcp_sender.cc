@@ -77,8 +77,10 @@ void TCPSender::fill_window() {
 
         Buffer buf(_stream.read(fill_size));
         // bytestream读完数据后，发现存在eof，并且发送窗口有空间发送这个fin（占用一个字节序列），则将header.fin置位
+        // 如果发送数据包大小为TCPConfig::MAX_PAYLOAD_SIZE，并且发送窗口足够大，此时限制发送数据包的只有TCPConfig::MAX_PAYLOAD_SIZE时，
+        // 如果此时设置了eof，则将fin也随同数据包一起发送
         if (_stream.eof()) {
-            if ((fill_size + 1 <= TCPConfig::MAX_PAYLOAD_SIZE) &&
+            if ((fill_size<= TCPConfig::MAX_PAYLOAD_SIZE) &&
                 (fill_size + 1 <= win_size_remain)) {
                 header.fin = true;
             }
