@@ -35,55 +35,57 @@ void TCPSender::fill_window() {
     if (_fin_in_flight_or_acked)
         return;
 
-    bool syn_fin_flag{false};
-    TCPHeader header{};
-    if (next_seqno_absolute() == 0) {
-        // SYN segment
-        header.syn = true;
-        syn_fin_flag = true;
-    }
-    // 结束输出，将fin标志位置1
-    if (_stream.eof()) {
-        header.fin = true;
-        syn_fin_flag = true;
-    }
-    header.seqno = next_seqno();
-
-    // 如果是receiver win size满了，不可发送任何数据包，包括发送fin（syn发送时默认window size为1，所以syn发送都能成功）
-    uint64_t win_size_remain = _receiver_window_size - bytes_in_flight();
-    if (win_size_remain == 0) {
-        return;
-    }
-
-    uint64_t buf_size = _stream.buffer_size();
-    // 如果bytestream没有数据发送，并且当前不是syn或fin包，则不发送任何segment
-    if (buf_size == 0 && !syn_fin_flag) {
-        return;
-    }
-    // 发送数据包的大小需要考虑三方面：1、发送缓冲区中数多少；2、TCP max_payload_size；3、receiver window size - bytes_in_flight()
-    uint64_t fill_size = min(buf_size, TCPConfig::MAX_PAYLOAD_SIZE);
-    fill_size = min(fill_size, win_size_remain);
-
-    Buffer buf(_stream.read(fill_size));
-    // bytestream读完数据后，发现存在eof，并且发送窗口有空间发送这个fin（占用一个字节序列），则将header.fin置位
-    if (_stream.eof()) {
-        if ((fill_size + 1 <= TCPConfig::MAX_PAYLOAD_SIZE) &&
-            (fill_size + 1 <= win_size_remain)) {
-            header.fin = true;
+    do {
+        bool syn_fin_flag{false};
+        TCPHeader header{};
+        if (next_seqno_absolute() == 0) {
+            // SYN segment
+            header.syn = true;
+            syn_fin_flag = true;
         }
-    }
-    // fin将被发送，设置标志
-    if (header.fin) {
-        _fin_in_flight_or_acked = true;
-    }
-    TCPSegment seg{};
-    seg.header() = header;
-    seg.payload() = buf;
-    _segments_out.push(seg);
-    // track the outstanding TCPSegment
-    _segments_track.push_back(std::make_pair(std::make_pair(_ms_tick_cnt, 0), seg));
-    _next_seqno += seg.length_in_sequence_space();
-    _bytes_in_fight += seg.length_in_sequence_space();
+        // 结束输出，将fin标志位置1
+        if (_stream.eof()) {
+            header.fin = true;
+            syn_fin_flag = true;
+        }
+        header.seqno = next_seqno();
+
+        // 如果是receiver win size满了，不可发送任何数据包，包括发送fin（syn发送时默认window size为1，所以syn发送都能成功）
+        uint64_t win_size_remain = _receiver_window_size - bytes_in_flight();
+        if (win_size_remain == 0) {
+            return;
+        }
+
+        uint64_t buf_size = _stream.buffer_size();
+        // 如果bytestream没有数据发送，并且当前不是syn或fin包，则不发送任何segment
+        if (buf_size == 0 && !syn_fin_flag) {
+            return;
+        }
+        // 发送数据包的大小需要考虑三方面：1、发送缓冲区中数多少；2、TCP max_payload_size；3、receiver window size - bytes_in_flight()
+        uint64_t fill_size = min(buf_size, TCPConfig::MAX_PAYLOAD_SIZE);
+        fill_size = min(fill_size, win_size_remain);
+
+        Buffer buf(_stream.read(fill_size));
+        // bytestream读完数据后，发现存在eof，并且发送窗口有空间发送这个fin（占用一个字节序列），则将header.fin置位
+        if (_stream.eof()) {
+            if ((fill_size + 1 <= TCPConfig::MAX_PAYLOAD_SIZE) &&
+                (fill_size + 1 <= win_size_remain)) {
+                header.fin = true;
+            }
+        }
+        // fin将被发送，设置标志
+        if (header.fin) {
+            _fin_in_flight_or_acked = true;
+        }
+        TCPSegment seg{};
+        seg.header() = header;
+        seg.payload() = buf;
+        _segments_out.push(seg);
+        // track the outstanding TCPSegment
+        _segments_track.push_back(std::make_pair(std::make_pair(_ms_tick_cnt, 0), seg));
+        _next_seqno += seg.length_in_sequence_space();
+        _bytes_in_fight += seg.length_in_sequence_space();
+    } while(_stream.buffer_size()); // 如果bytestream中还有数据，则继续发送
 }
 
 //! \param ackno The remote receiver's ackno (acknowledgment number)
