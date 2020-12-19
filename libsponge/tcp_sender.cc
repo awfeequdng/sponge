@@ -21,7 +21,8 @@ using namespace std;
 TCPSender::TCPSender(const size_t capacity, const uint16_t retx_timeout, const std::optional<WrappingInt32> fixed_isn)
     : _isn(fixed_isn.value_or(WrappingInt32{random_device()()}))
     , _initial_retransmission_timeout{retx_timeout}
-    , _stream(capacity) 
+    , _stream(capacity)
+    , _receiver_ackno(_isn)
     , _receiver_window_size(1) {}
 
 uint64_t TCPSender::bytes_in_flight() const {
@@ -50,11 +51,20 @@ void TCPSender::fill_window() {
         }
         header.seqno = next_seqno();
 
-        // 如果是receiver win size满了，不可发送任何数据包，包括发送fin（syn发送时默认window size为1，所以syn发送都能成功）
-        uint64_t win_size_remain = _receiver_window_size - bytes_in_flight();
-        if (win_size_remain == 0) {
+        // 下一个seqno的结束位置，不包含结束值
+        WrappingInt32 next_seqno_end = _receiver_ackno + _receiver_window_size;
+
+        // 如果是receiver win size满了，不可发送任何数据包，
+        // 即next_seqno必须在[_receiver_ackno, _receiver_ackno + _receiver_window_size)之间，
+        // 否则不发送任何数据包，包括不发送fin（syn发送时默认window size为1，所以syn发送都能成功）
+        // 无符号数相减后转换成有符号数，可以解决回绕问题，这个原理和linux内核中的time_before函数类似
+        int32_t remain = next_seqno_end - next_seqno();
+        if (remain <= 0) {
+            // next_seqno() 大于seqno_end说明当前发送窗口大小为0
             return;
         }
+
+        uint64_t win_size_remain = remain;
 
         uint64_t buf_size = _stream.buffer_size();
         // 如果bytestream没有数据发送，并且当前不是syn或fin包，则不发送任何segment
@@ -91,13 +101,16 @@ void TCPSender::fill_window() {
 //! \param ackno The remote receiver's ackno (acknowledgment number)
 //! \param window_size The remote receiver's advertised window size
 void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_size) { 
+    // 接收窗口为[ackno, ackno + window_size)，当发送的数据包seqno不在这个范围内，则不能发送。
     // 在等待队列中的数据接收到了ack响应
     bool ack_outstanding_flag{false};
     while(not _segments_track.empty()) {
         std::pair<std::pair<uint64_t, uint64_t>, TCPSegment> &tick_retx_seg = _segments_track.front();
         TCPSegment &seg = tick_retx_seg.second;
         WrappingInt32 expected_ackno = seg.header().seqno + seg.length_in_sequence_space();
-        // 如果expected_ackno 或者 ackno 发生回绕该如何处理？todo:此处存在bug
+        // 如果expected_ackno 或者 ackno 发生回绕该如何处理？
+        // 此时发生了回绕也没有关系，因为WrappingInt32的减法返回的是int32_t类型，如果发生了回绕，减法右边的数本应更大，但是现在变得更小，
+        // 减法后无符号数的值转换成有符号后(32位的最高为为1)，那么相减的结果就是负数，不影响比较结果。
         if (expected_ackno - ackno <= 0) {
             _bytes_in_fight -= seg.length_in_sequence_space();
             if (seg.header().fin) {
@@ -121,6 +134,7 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
         tick_retx_seg.first.first = _ms_tick_cnt; // 设置当前的时间戳
         tick_retx_seg.first.second = 0; // 重传次数为0
     }
+    _receiver_ackno = ackno;
     _receiver_window_size = window_size;
 }
 

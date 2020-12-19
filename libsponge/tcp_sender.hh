@@ -41,7 +41,9 @@ class TCPSender {
     //! the (absolute) sequence number for the next byte to be sent
     uint64_t _next_seqno{0};
 
-    uint64_t _receiver_window_size;
+    // _receiver_ackno初始值应该设置为_isn，也就是期望的syn数据包序列
+    WrappingInt32 _receiver_ackno;
+    uint16_t _receiver_window_size;
 
     uint64_t _bytes_in_fight{0};
 
