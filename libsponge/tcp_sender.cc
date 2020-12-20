@@ -37,6 +37,7 @@ void TCPSender::fill_window() {
         return;
 
     do {
+        std::cout<<"fill_window"<<std::endl;
         bool syn_fin_flag{false};
         TCPHeader header{};
         if (next_seqno_absolute() == 0) {
@@ -99,6 +100,7 @@ void TCPSender::fill_window() {
         _segments_track.push_back(std::make_pair(std::make_pair(_ms_tick_cnt, 0), seg));
         _next_seqno += seg.length_in_sequence_space();
         _bytes_in_fight += seg.length_in_sequence_space();
+        std::cout<<"send seg, fin = "<<seg.header().fin<<"syn = "<<seg.header().syn<<" _segment_out.size = "<<_segments_out.size()<<std::endl;
     } while(_stream.buffer_size() && _receiver_window_size); // 如果bytestream中还有数据，并且接收窗口大于0，则继续发送
 }
 
@@ -188,8 +190,9 @@ unsigned int TCPSender::consecutive_retransmissions() const { return _consecutiv
 void TCPSender::send_empty_segment() {
     TCPHeader header{};
     header.seqno = next_seqno();
-    // empty segment用于ack
-    header.ack = true;
+    // empty segment用于RST
+    header.rst = true;
+
     TCPSegment seg{};
     seg.header() = header;
     _segments_out.emplace(seg);

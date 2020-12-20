@@ -20,7 +20,19 @@ class TCPConnection {
     //! for 10 * _cfg.rt_timeout milliseconds after both streams have ended,
     //! in case the remote TCPConnection doesn't know we've received its whole stream?
     bool _linger_after_streams_finish{true};
+    // 最后接收到segment的时间戳
+    size_t _last_segment_received_tick{0};
+    // 当前时间戳
+    size_t _ms_tick{0};
 
+    bool _active{true};
+    // 发送ack回应
+    // syn: 是否发送syn标志
+    void send_ack_segment(bool syn = false);
+
+    //! 将_sender中的segment_out中的segment转移到TCPConnection的_segment_out中来，
+    //！ 并且对所有非syn和非rst的segment添加ACK标志以及acknowledge number
+    void collect_output();
   public:
     //! \name "Input" interface for the writer
     //!@{
@@ -72,7 +84,7 @@ class TCPConnection {
     //! \note The owner or operating system will dequeue these and
     //! put each one into the payload of a lower-layer datagram (usually Internet datagrams (IP),
     //! but could also be user datagrams (UDP) or any other kind).
-    std::queue<TCPSegment> &segments_out() { return _segments_out; }
+    std::queue<TCPSegment> &segments_out() { return _segments_out;}
 
     //! \brief Is the connection still alive in any way?
     //! \returns `true` if either stream is still running or if the TCPConnection is lingering
