@@ -14,19 +14,20 @@ using namespace std;
 
 void TCPConnection::send_ack_segment(bool syn) {
     TCPSegment seg{};
-    seg.header().ack = true;
-    std::optional<WrappingInt32> ackno = _receiver.ackno();
-    if (ackno.has_value()) {
-        seg.header().ackno = ackno.value();
-    } else {
-        seg.header().ackno = WrappingInt32{0};
-    }
+    // seg.header().ack = true;
+    // std::optional<WrappingInt32> ackno = _receiver.ackno();
+    // if (ackno.has_value()) {
+    //     seg.header().ackno = ackno.value();
+    // } else {
+    //     seg.header().ackno = WrappingInt32{0};
+    // }
     seg.header().syn = syn;
 
     seg.header().seqno = _sender.next_seqno();
-    seg.header().win = _receiver.window_size();
+    // seg.header().win = _receiver.window_size();
 
-    segments_out().emplace(std::move(seg));
+    _sender.segments_out().emplace(std::move(seg));
+    // segments_out().emplace(std::move(seg));
 }
 
 void TCPConnection::collect_output() {
@@ -67,13 +68,19 @@ void TCPConnection::segment_received(const TCPSegment &seg) {
 
     _receiver.segment_received(seg);
 
+    
     if (seg.header().syn && not seg.header().ack) {
         // syn 报文，回复syn/ack 报文
-        send_ack_segment(true);
-    } else {
-        // 数据报文，回复ack 报文
+        // 调用fill_window激活_sender的状态
+        _sender.fill_window();
+    } else if (seg.length_in_sequence_space() > 0) {
+        // 如果是一个ack,并且携带数据，回复ack
         send_ack_segment();
+    } else {
+        // 如果ack不携带任何数据， 则不需要回复ack
     }
+    // 该函数会将所有的segment添加上ackno
+    collect_output();
 }
 
 bool TCPConnection::active() const { return _active; }
@@ -90,7 +97,8 @@ void TCPConnection::tick(const size_t ms_since_last_tick) {
 
 void TCPConnection::end_input_stream() {
     _sender.stream_in().end_input();
-    _active = false;
+    // end_input后，connection还是active的，接收侧还没有关闭
+    // _active = false;
     // 在结束输入后，我们将重新填充以下窗口，触发发送机制
     _sender.fill_window();
     collect_output();
