@@ -105,7 +105,11 @@ void TCPSender::fill_window() {
 //! \param ackno The remote receiver's ackno (acknowledgment number)
 //! \param window_size The remote receiver's advertised window size
 void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_size) { 
-    // 接收窗口为[ackno, ackno + window_size)，当发送的数据包seqno不在这个范围内，则不能发送。
+    // ackno的值不能超过next_seqno()，否则认为时无效的ackno
+    if (ackno - next_seqno() > 0) {
+        return;
+    }
+
     // 在等待队列中的数据接收到了ack响应
     bool ack_outstanding_flag{false};
     while(not _segments_track.empty()) {
@@ -138,6 +142,8 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
         tick_retx_seg.first.first = _ms_tick_cnt; // 设置当前的时间戳
         tick_retx_seg.first.second = 0; // 重传次数为0
     }
+
+    // 接收窗口为[ackno, ackno + window_size)，当发送的数据包seqno不在这个范围内，则不能发送。
     _receiver_ackno = ackno;
     _receiver_window_size = window_size;
 }
