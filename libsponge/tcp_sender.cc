@@ -99,7 +99,7 @@ void TCPSender::fill_window() {
         _segments_track.push_back(std::make_pair(std::make_pair(_ms_tick_cnt, 0), seg));
         _next_seqno += seg.length_in_sequence_space();
         _bytes_in_fight += seg.length_in_sequence_space();
-    } while(_stream.buffer_size()); // 如果bytestream中还有数据，则继续发送
+    } while(_stream.buffer_size() && _receiver_window_size); // 如果bytestream中还有数据，并且接收窗口大于0，则继续发送
 }
 
 //! \param ackno The remote receiver's ackno (acknowledgment number)
