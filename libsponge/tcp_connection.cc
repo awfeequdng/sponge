@@ -37,6 +37,7 @@ void TCPConnection::collect_output() {
             // 除了syn，其他所有数据包都要加上ack标志
             seg.header().ack = true;
             seg.header().ackno = _receiver.ackno().value();
+            seg.header().win = _receiver.window_size();
         }
         _segments_out.emplace(seg);
         _sender.segments_out().pop();
@@ -80,14 +81,14 @@ void TCPConnection::segment_received(const TCPSegment &seg) {
 
     // 接收到syn请求时有两种处理方式：
     // 1、如果还没有发送过syn请求，然后连接的状态会被转换为SYN_RECV，这种情况回复syn+ack;
-    // 2、如果刚刚发送了syn请求，还没有接收到ack，然后状态会被转换为SYN_RECV；或者发送了syn，并且接收的segment为syn+ack，然后状态就会转换为ESTABLISHED;此时都回复ack，
+    // 2、如果刚刚发送了syn请求，还没有接收到ack，然后状态会被转换为SYN_RECV；或者发送了syn，并且接收的segment为syn+ack，然后状态就会转换为ESTABLISHED;此时都回复ack
     if (seg.header().syn) {
         if (TCPState::state_summary(_sender) == TCPSenderStateSummary::SYN_SENT ||
             seg.header().ack) {
             // 刚刚发送了syn请求，还没有收到ack；或者发送了syn，并且收到了ack响应
             // 此时回复ack
             _sender.send_empty_segment();
-        } else {    
+        } else {
             // 还没发送过syn请求：
             // 回复syn/ack 报文
             _sender.fill_window();
@@ -98,6 +99,9 @@ void TCPConnection::segment_received(const TCPSegment &seg) {
     } else {
         // 如果ack不携带任何数据， 则不需要回复ack
     }
+
+    // 如果sender还有数据发送，则继续发送
+    _sender.fill_window();
     // 该函数会将所有的segment添加上ackno
     collect_output();
 }
@@ -106,6 +110,8 @@ bool TCPConnection::active() const { return _active; }
 
 size_t TCPConnection::write(const string &data) {
     size_t size = _sender.stream_in().write(data);
+    _sender.fill_window();
+    collect_output();
     return size;
 }
 

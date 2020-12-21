@@ -29,8 +29,11 @@ uint64_t TCPSender::bytes_in_flight() const {
     return _bytes_in_fight;
  }
 
-// fill_window会在回复ackno后被上层调用，
-// 因此在bytestream中没有数据时，并且不是syn和fin请求，不发送任何数据包
+// fill_window会在接收ack响应后被上层调用，或者主动发送数据时被上层调用；
+// fill_window功能：
+// 1、当接收窗口为0时，将这个窗口值当做1，如果发送缓存区有数据，发送1字节的数据；
+// 2、当接收窗口为0时，将这个窗口值当做1，如果缓冲区没有数据，并且fin标志设置了，发送一个fin segment；
+// 3、当接收窗口为0时，将这个窗口值当做1，如果缓冲区没有数据，且没有syn和fin标志，则直接返回。
 void TCPSender::fill_window() {
     // fin已经被发送，或者已经接收到了fin的ack，不再发送任何segment
     if (_fin_in_flight_or_acked)
@@ -82,7 +85,7 @@ void TCPSender::fill_window() {
         // 如果发送数据包大小为TCPConfig::MAX_PAYLOAD_SIZE，并且发送窗口足够大，此时限制发送数据包的只有TCPConfig::MAX_PAYLOAD_SIZE时，
         // 如果此时设置了eof，则将fin也随同数据包一起发送
         if (_stream.eof()) {
-            if ((fill_size<= TCPConfig::MAX_PAYLOAD_SIZE) &&
+            if ((fill_size <= TCPConfig::MAX_PAYLOAD_SIZE) &&
                 (fill_size + 1 <= win_size_remain)) {
                 header.fin = true;
             }
