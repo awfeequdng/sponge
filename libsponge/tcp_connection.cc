@@ -61,12 +61,24 @@ void TCPConnection::segment_received(const TCPSegment &seg) {
         _active = false;
         return;
     }
-
-    if (seg.header().ack) {
+    // 发送syn时，也是会携带ackno以及接收窗口的，此时ack标志是没有设置的, 因此接收syn时也要给sender传递接收窗口
+    if (seg.header().syn || seg.header().ack) {
         _sender.ack_received(seg.header().ackno, seg.header().win);
     }
 
+
     _receiver.segment_received(seg);
+
+    // 被动关闭时，将_linger_after_streams_finish设置为false，因为被动关闭没有TIME_WAIT这个状态
+    // 即CLOSE_WAIT和LAST_ACK状态时将_linger_after_streams_finish设置为false
+    // CLOSE_WAIT
+    if (TCPState::state_summary(_receiver) == TCPReceiverStateSummary::FIN_RECV &&
+        TCPState::state_summary(_sender) == TCPSenderStateSummary::SYN_ACKED)
+        _linger_after_streams_finish = false;
+    // LAST_ACK : 这个状态不用再设置了，刚刚CLOSE_WAIT状态已经设置为false了
+    // if (receiver_state == TCPReceiverStateSummary::FIN_RECV &&
+    //     sender_state == TCPSenderStateSummary::FIN_SENT)
+    //     _linger_after_streams_finish = false;
 
     
     if (seg.header().syn && not seg.header().ack) {
@@ -98,6 +110,18 @@ void TCPConnection::tick(const size_t ms_since_last_tick) {
 
     std::string sender_state = TCPState::state_summary(_sender);
     std::string receiver_state = TCPState::state_summary(_receiver);
+    // 被动关闭时，将_linger_after_streams_finish设置为false，因为被动关闭没有TIME_WAIT这个状态
+    // 即CLOSE_WAIT和LAST_ACK状态时将_linger_after_streams_finish设置为false
+    // CLOSE_WAIT
+    // if (receiver_state == TCPReceiverStateSummary::FIN_RECV &&
+    //     sender_state == TCPSenderStateSummary::SYN_ACKED)
+    //     _linger_after_streams_finish = false;
+    // LAST_ACK
+    // if (receiver_state == TCPReceiverStateSummary::FIN_RECV &&
+    //     sender_state == TCPSenderStateSummary::FIN_SENT)
+    //     _linger_after_streams_finish = false;
+
+
     // 当前处于TIME_WAIT状态
     if (sender_state == TCPSenderStateSummary::FIN_ACKED &&
         receiver_state == TCPReceiverStateSummary::FIN_RECV) {
