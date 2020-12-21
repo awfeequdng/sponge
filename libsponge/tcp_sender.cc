@@ -190,11 +190,9 @@ unsigned int TCPSender::consecutive_retransmissions() const { return _consecutiv
 void TCPSender::send_empty_segment() {
     TCPHeader header{};
     header.seqno = next_seqno();
-    // empty segment用于RST
-    header.rst = true;
-
+    // empty segment用于ack, ack标志以及ack number在其他地方设置
     TCPSegment seg{};
     seg.header() = header;
-    _segments_out.emplace(seg);
+    _segments_out.emplace(std::move(seg));
     // empty segment不需要跟踪
 }

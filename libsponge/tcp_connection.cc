@@ -75,7 +75,7 @@ void TCPConnection::segment_received(const TCPSegment &seg) {
         _sender.fill_window();
     } else if (seg.length_in_sequence_space() > 0) {
         // 如果是一个ack,并且携带数据，回复ack
-        send_ack_segment();
+        _sender.send_empty_segment();
     } else {
         // 如果ack不携带任何数据， 则不需要回复ack
     }
@@ -92,7 +92,29 @@ size_t TCPConnection::write(const string &data) {
 
 //! \param[in] ms_since_last_tick number of milliseconds since the last call to this method
 void TCPConnection::tick(const size_t ms_since_last_tick) { 
+    _sender.tick(ms_since_last_tick);
+
     _ms_tick += ms_since_last_tick;
+
+    std::string sender_state = TCPState::state_summary(_sender);
+    std::string receiver_state = TCPState::state_summary(_receiver);
+    // 当前处于TIME_WAIT状态
+    if (sender_state == TCPSenderStateSummary::FIN_ACKED &&
+        receiver_state == TCPReceiverStateSummary::FIN_RECV) {
+        if (_linger_after_streams_finish) {
+            // 在time_wait等待 10 * _cfg.rt_timeout，然后关闭连接
+            if ((_ms_tick - _last_segment_received_tick) >= 10 * _cfg.rt_timeout) {
+                _active = false;
+                _sender.stream_in().set_error();
+                _receiver.stream_out().set_error();
+            }
+        } else {
+            // 不需要等待10 * _cfg.rt_timeout,只要接收到_sender处于FIN_ACKED, _receiver处于FIN_RECV立马结束连接
+            _active = false;
+            _sender.stream_in().set_error();
+            _receiver.stream_out().set_error();
+        }        
+    }
 }
 
 void TCPConnection::end_input_stream() {
@@ -114,9 +136,9 @@ TCPConnection::~TCPConnection() {
         if (active()) {
             cerr << "Warning: Unclean shutdown of TCPConnection\n";
             // Your code here: need to send a RST segment to the peer
-            // send_empty_segment用于生成rst segment
-            _sender.send_empty_segment();
-            collect_output();
+            // 此处如何发送rst？？ tcp connection都要结束了？
+            // 应该是封装rst报文直接发送，而不是放入发送缓冲区
+            
             _active = false;
             _sender.stream_in().set_error();
             _receiver.stream_out().set_error();
