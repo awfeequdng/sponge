@@ -105,14 +105,10 @@ void TCPConnection::tick(const size_t ms_since_last_tick) {
             // 在time_wait等待 10 * _cfg.rt_timeout，然后关闭连接
             if ((_ms_tick - _last_segment_received_tick) >= 10 * _cfg.rt_timeout) {
                 _active = false;
-                _sender.stream_in().set_error();
-                _receiver.stream_out().set_error();
             }
         } else {
             // 不需要等待10 * _cfg.rt_timeout,只要接收到_sender处于FIN_ACKED, _receiver处于FIN_RECV立马结束连接
             _active = false;
-            _sender.stream_in().set_error();
-            _receiver.stream_out().set_error();
         }        
     }
 }
