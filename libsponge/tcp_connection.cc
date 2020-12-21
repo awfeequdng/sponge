@@ -65,8 +65,6 @@ void TCPConnection::segment_received(const TCPSegment &seg) {
     if (seg.header().ack) {
         _sender.ack_received(seg.header().ackno, seg.header().win);
     }
-
-
     _receiver.segment_received(seg);
 
     // 被动关闭时，将_linger_after_streams_finish设置为false，因为被动关闭没有TIME_WAIT这个状态
@@ -80,11 +78,20 @@ void TCPConnection::segment_received(const TCPSegment &seg) {
     //     sender_state == TCPSenderStateSummary::FIN_SENT)
     //     _linger_after_streams_finish = false;
 
-    
-    if (seg.header().syn && not seg.header().ack) {
-        // syn 报文，回复syn/ack 报文
-        // 调用fill_window激活_sender的状态
-        _sender.fill_window();
+    // 接收到syn请求时有两种处理方式：
+    // 1、如果还没有发送过syn请求，然后连接的状态会被转换为SYN_RECV，这种情况回复syn+ack;
+    // 2、如果刚刚发送了syn请求，还没有接收到ack，然后状态会被转换为SYN_RECV；或者发送了syn，并且接收的segment为syn+ack，然后状态就会转换为ESTABLISHED;此时都回复ack，
+    if (seg.header().syn) {
+        if (TCPState::state_summary(_sender) == TCPSenderStateSummary::SYN_SENT ||
+            seg.header().ack) {
+            // 刚刚发送了syn请求，还没有收到ack；或者发送了syn，并且收到了ack响应
+            // 此时回复ack
+            _sender.send_empty_segment();
+        } else {    
+            // 还没发送过syn请求：
+            // 回复syn/ack 报文
+            _sender.fill_window();
+        }
     } else if (seg.length_in_sequence_space() > 0) {
         // 如果是一个ack,并且携带数据，回复ack
         _sender.send_empty_segment();
