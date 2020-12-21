@@ -61,8 +61,8 @@ void TCPConnection::segment_received(const TCPSegment &seg) {
         _active = false;
         return;
     }
-    // 发送syn时，也是会携带ackno以及接收窗口的，此时ack标志是没有设置的, 因此接收syn时也要给sender传递接收窗口
-    if (seg.header().syn || seg.header().ack) {
+    // 更新接收窗口
+    if (seg.header().ack) {
         _sender.ack_received(seg.header().ackno, seg.header().win);
     }
 
