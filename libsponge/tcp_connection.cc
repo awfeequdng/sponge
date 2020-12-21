@@ -12,27 +12,23 @@ void DUMMY_CODE(Targs &&... /* unused */) {}
 
 using namespace std;
 
-void TCPConnection::send_ack_segment(bool syn) {
-    TCPSegment seg{};
-    // seg.header().ack = true;
-    // std::optional<WrappingInt32> ackno = _receiver.ackno();
-    // if (ackno.has_value()) {
-    //     seg.header().ackno = ackno.value();
-    // } else {
-    //     seg.header().ackno = WrappingInt32{0};
-    // }
-    seg.header().syn = syn;
-
-    seg.header().seqno = _sender.next_seqno();
-    // seg.header().win = _receiver.window_size();
-
-    _sender.segments_out().emplace(std::move(seg));
-    // segments_out().emplace(std::move(seg));
+void TCPConnection::set_inactive() {
+    _active = false;
+    _sender.stream_in().set_error();
+    _receiver.stream_out().set_error();
+    _sender.send_empty_segment();
 }
 
 void TCPConnection::collect_output() {
     while (not _sender.segments_out().empty()) {
         TCPSegment &seg = _sender.segments_out().front();
+        if (_active == false) {
+            // 当前处于无效状态，发送rst，然后直接返回
+            seg.header().rst = true;
+            _segments_out.emplace(seg);
+            _sender.segments_out().pop();
+            return;
+        }
         if (_receiver.ackno().has_value()) {
             // 除了syn，其他所有数据包都要加上ack标志
             seg.header().ack = true;
@@ -65,6 +61,7 @@ void TCPConnection::segment_received(const TCPSegment &seg) {
         _active = false;
         return;
     }
+
     _last_segment_received_tick = _ms_tick;
     // 更新接收窗口
     if (seg.header().ack) {
@@ -100,7 +97,8 @@ void TCPConnection::segment_received(const TCPSegment &seg) {
             // _sender.fill_window();
         }
     } else if (seg.length_in_sequence_space() > 0) {
-        // 如果是一个ack,并且携带数据，回复ack
+        // 如果是数据包，回复ack;
+        // 如果是个fin，回复ack
         _sender.send_empty_segment();
     } else {
         // 如果ack不携带任何数据， 则不需要回复ack
@@ -123,9 +121,17 @@ size_t TCPConnection::write(const string &data) {
 
 //! \param[in] ms_since_last_tick number of milliseconds since the last call to this method
 void TCPConnection::tick(const size_t ms_since_last_tick) { 
-    _sender.tick(ms_since_last_tick);
-
     _ms_tick += ms_since_last_tick;
+
+    
+    _sender.tick(ms_since_last_tick);
+    // 如果连续重传次数超过_cfg.MAX_RETX_ATTEMPTS，则直接断开链接
+    if (_sender.consecutive_retransmissions() > _cfg.MAX_RETX_ATTEMPTS) {
+        set_inactive();
+    }
+    // 超时重传后需要将segment_out中的segment发送出来
+    collect_output();
+    
 
     std::string sender_state = TCPState::state_summary(_sender);
     std::string receiver_state = TCPState::state_summary(_receiver);
@@ -176,11 +182,8 @@ TCPConnection::~TCPConnection() {
             cerr << "Warning: Unclean shutdown of TCPConnection\n";
             // Your code here: need to send a RST segment to the peer
             // 此处如何发送rst？？ tcp connection都要结束了？
-            // 应该是封装rst报文直接发送，而不是放入发送缓冲区
-            
-            _active = false;
-            _sender.stream_in().set_error();
-            _receiver.stream_out().set_error();
+            // 应该是封装rst报文直接发送，而不是放入发送缓冲区，此处存在bug. todo:
+            set_inactive();
         }
     } catch (const exception &e) {
         std::cerr << "Exception destructing TCP FSM: " << e.what() << std::endl;

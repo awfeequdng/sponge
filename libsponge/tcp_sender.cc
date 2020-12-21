@@ -145,7 +145,6 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
         tick_retx_seg.first.first = _ms_tick_cnt; // 设置当前的时间戳
         tick_retx_seg.first.second = 0; // 重传次数为0
     }
-
     // 接收窗口为[ackno, ackno + window_size)，当发送的数据包seqno不在这个范围内，则不能发送。
     _receiver_ackno = ackno;
     _receiver_window_size = window_size;
@@ -157,6 +156,7 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
 //! \param[in] ms_since_last_tick the number of milliseconds since the last call to this method
 void TCPSender::tick(const size_t ms_since_last_tick) { 
     _ms_tick_cnt += ms_since_last_tick;
+
     std::deque<std::pair<std::pair<uint64_t, uint64_t>, TCPSegment>>::iterator it_track= _segments_track.begin();
     bool retx_flag{false}; //是否发生重传
     // 当重传队列中有多个segment时，第一个segment没有接收到ack时，
@@ -167,7 +167,7 @@ void TCPSender::tick(const size_t ms_since_last_tick) {
         uint64_t tick = tick_retx.first;
         uint64_t retx = tick_retx.second;
         // 超时时间是按指数方式增长的，每超时一次，超时时间就翻一倍
-        if (tick + (_initial_retransmission_timeout<<retx) <= _ms_tick_cnt) {
+        if (tick + (_initial_retransmission_timeout << retx) <= _ms_tick_cnt) {
             // 超时重传, 更新重传时间,更新重传次数
             tick_retx.first = _ms_tick_cnt;
             // When filling window, treat a '0' window size as equal to '1' but don't back off RTO
@@ -190,6 +190,10 @@ unsigned int TCPSender::consecutive_retransmissions() const { return _consecutiv
 
 void TCPSender::send_empty_segment() {
     TCPHeader header{};
+    // // 如果bytestream存在错误，则发送rst segment
+    // if (stream_in().error()) {
+    //     header.rst = true;
+    // }
     header.seqno = next_seqno();
     // empty segment用于ack, ack标志以及ack number在其他地方设置
     TCPSegment seg{};
