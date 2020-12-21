@@ -55,18 +55,23 @@ size_t TCPConnection::time_since_last_segment_received() const {
 }
 
 void TCPConnection::segment_received(const TCPSegment &seg) { 
-    _last_segment_received_tick = _ms_tick;
+    // 如果当前还没有发送过syn，并且对端发送过来的不是syn，则直接返回，不做任何处理
+    if (_sender.next_seqno_absolute() == 0 && not seg.header().syn) {
+        return;
+    }
     if (seg.header().rst) {
         _sender.stream_in().set_error();
         _receiver.stream_out().set_error();
         _active = false;
         return;
     }
+    _last_segment_received_tick = _ms_tick;
     // 更新接收窗口
     if (seg.header().ack) {
         _sender.ack_received(seg.header().ackno, seg.header().win);
     }
     _receiver.segment_received(seg);
+    
 
     // 被动关闭时，将_linger_after_streams_finish设置为false，因为被动关闭没有TIME_WAIT这个状态
     // 即CLOSE_WAIT和LAST_ACK状态时将_linger_after_streams_finish设置为false
@@ -91,7 +96,8 @@ void TCPConnection::segment_received(const TCPSegment &seg) {
         } else {
             // 还没发送过syn请求：
             // 回复syn/ack 报文
-            _sender.fill_window();
+            // 最后面会统一调用_sender.fill_window()发送
+            // _sender.fill_window();
         }
     } else if (seg.length_in_sequence_space() > 0) {
         // 如果是一个ack,并且携带数据，回复ack
